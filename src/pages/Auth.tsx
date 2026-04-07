@@ -1,6 +1,6 @@
 //import React, { useState } from 'react';
 import React, { useEffect, useState } from 'react';
-import { useEffect } from 'react'
+//import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -51,6 +51,25 @@ const Auth = () => {
 
 
   useEffect(() => {
+const processarConvite = async () => {
+    const url = new URL(window.location.href);
+    const code = url.searchParams.get('code');
+
+    if (code) {
+      const { error } = await supabase.auth.exchangeCodeForSession(code);
+
+      if (error) {
+        console.error('Erro ao trocar code por sessão:', error);
+        toast.error('Não foi possível concluir o convite. Tente novamente.');
+        return;
+      }
+
+      navigate('/');
+      return;
+    }
+
+
+
   const verificarSessao = async () => {
     const {
       data: { session },
