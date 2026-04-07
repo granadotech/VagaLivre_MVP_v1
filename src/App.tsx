@@ -12,6 +12,7 @@ import MinhasVagas from "./pages/MinhasVagas";
 import Historico from "./pages/Historico";
 import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
+import SolicitacoesAdmin from './pages/SolicitacoesAdmin';
 
 const queryClient = new QueryClient();
 
@@ -60,6 +61,15 @@ const App = () => (
       </ProtectedRoute>
     }
   />
+  <Route
+    path="/solicitacoes-admin"
+    element={
+      <ProtectedRoute>
+       <SolicitacoesAdmin />
+      </ProtectedRoute>
+    }
+  />
+
 
  <Route
   path="/admin"

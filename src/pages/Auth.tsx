@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,13 +13,23 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import logo from '@/assets/logo.png';
 
 const Auth = () => {
   const navigate = useNavigate();
   const { signIn, signUp } = useAuth();
+
   const [loading, setLoading] = useState(false);
+  const [solicitarOpen, setSolicitarOpen] = useState(false);
+  const [solicitando, setSolicitando] = useState(false);
 
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -27,10 +38,30 @@ const Auth = () => {
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
 
+  const [solNome, setSolNome] = useState('');
+  const [solEmail, setSolEmail] = useState('');
+  const [solCelular, setSolCelular] = useState('');
+  const [solNomeCondominio, setSolNomeCondominio] = useState('');
+  const [solCidade, setSolCidade] = useState('');
+  const [solEstado, setSolEstado] = useState('');
+  const [solTotalVagas, setSolTotalVagas] = useState('');
+  const [solPerfil, setSolPerfil] = useState('');
+  const [solMensagem, setSolMensagem] = useState('');
+
   const normalizarEmail = (email: string) => email.trim().toLowerCase();
 
-  const emailValido = (email: string) => {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  const emailValido = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+  const resetSolicitacaoForm = () => {
+    setSolNome('');
+    setSolEmail('');
+    setSolCelular('');
+    setSolNomeCondominio('');
+    setSolCidade('');
+    setSolEstado('');
+    setSolTotalVagas('');
+    setSolPerfil('');
+    setSolMensagem('');
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -38,7 +69,6 @@ const Auth = () => {
     setLoading(true);
 
     const emailNormalizado = normalizarEmail(loginEmail);
-
     const { error } = await signIn(emailNormalizado, loginPassword);
 
     if (error) {
@@ -74,11 +104,9 @@ const Auth = () => {
         return;
       }
 
-      const { error: signUpError } = await signUp(
-        emailNormalizado,
-        regPassword,
-        { nome: regNome.trim() }
-      );
+      const { error: signUpError } = await signUp(emailNormalizado, regPassword, {
+        nome: regNome.trim(),
+      });
 
       if (signUpError) {
         toast.error('Erro no cadastro: ' + signUpError.message);
@@ -104,6 +132,91 @@ const Auth = () => {
       toast.error('Erro no cadastro: ' + error.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSolicitarAcesso = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (
+      !solNome.trim() ||
+      !solEmail.trim() ||
+      !solNomeCondominio.trim() ||
+      !solPerfil.trim()
+    ) {
+      toast.error('Preencha os campos obrigatórios.');
+      return;
+    }
+
+    const emailNormalizado = normalizarEmail(solEmail);
+
+    if (!emailValido(emailNormalizado)) {
+      toast.error('Informe um email válido.');
+      return;
+    }
+
+    try {
+      setSolicitando(true);
+
+      const payload = {
+        nome: solNome.trim(),
+        email: emailNormalizado,
+        celular: solCelular.trim() || null,
+        nome_condominio: solNomeCondominio.trim(),
+        cidade: solCidade.trim() || null,
+        estado: solEstado.trim() || null,
+        total_vagas_estimado: solTotalVagas ? parseInt(solTotalVagas, 10) : null,
+        perfil_solicitante: solPerfil,
+        mensagem: solMensagem.trim() || null,
+      };
+
+      const { error: insertError } = await supabase
+        .from('solicitacoes_admin')
+        .insert(payload);
+
+      if (insertError) {
+        throw insertError;
+      }
+
+      const { error: notifyError } = await supabase.functions.invoke(
+        'notify-admin-request',
+        { body: payload }
+      );
+
+  if (notifyError) {
+  console.error('Erro ao enviar notificação por email:', notifyError);
+
+ const { error: notifyError } = await supabase.functions.invoke(
+  'notify-admin-request',
+  { body: payload }
+);
+
+if (notifyError) {
+  console.error('Erro ao enviar notificação por email:', notifyError);
+
+  toast.error(
+    'Solicitação salva, mas a notificação por email não pôde ser enviada agora.'
+  );
+} else {
+  toast.success(
+    'Solicitação enviada com sucesso. Em breve entraremos em contato.'
+  );
+}
+
+
+  toast.error(mensagemErro);
+} else {
+        toast.success(
+          'Solicitação enviada com sucesso. Em breve entraremos em contato.'
+        );
+      }
+
+      setSolicitarOpen(false);
+      resetSolicitacaoForm();
+    } catch (error: any) {
+      toast.error('Erro ao enviar solicitação: ' + error.message);
+    } finally {
+      setSolicitando(false);
     }
   };
 
@@ -219,6 +332,145 @@ const Auth = () => {
                     {loading ? 'Cadastrando...' : 'Criar conta'}
                   </Button>
                 </form>
+
+                <div className="mt-6 border-t pt-4">
+                  <p className="text-sm text-muted-foreground text-center mb-3">
+                    É síndico ou responsável pelo condomínio?
+                  </p>
+
+                  <Dialog open={solicitarOpen} onOpenChange={setSolicitarOpen}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" className="w-full">
+                        Solicitar acesso
+                      </Button>
+                    </DialogTrigger>
+
+                    <DialogContent className="max-h-[90vh] overflow-auto">
+                      <DialogHeader>
+                        <DialogTitle>Solicitar acesso</DialogTitle>
+                      </DialogHeader>
+
+                      <form onSubmit={handleSolicitarAcesso} className="space-y-3 mt-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="sol-nome">Nome completo *</Label>
+                          <Input
+                            id="sol-nome"
+                            value={solNome}
+                            onChange={(e) => setSolNome(e.target.value)}
+                            placeholder="Seu nome"
+                            required
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="sol-email">Email *</Label>
+                          <Input
+                            id="sol-email"
+                            type="email"
+                            value={solEmail}
+                            onChange={(e) => setSolEmail(e.target.value)}
+                            placeholder="seu@email.com"
+                            required
+                            autoCapitalize="none"
+                            autoCorrect="off"
+                            spellCheck={false}
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="sol-celular">Celular</Label>
+                          <Input
+                            id="sol-celular"
+                            value={solCelular}
+                            onChange={(e) => setSolCelular(e.target.value)}
+                            placeholder="(11) 99999-9999"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="sol-condominio">Nome do condomínio *</Label>
+                          <Input
+                            id="sol-condominio"
+                            value={solNomeCondominio}
+                            onChange={(e) => setSolNomeCondominio(e.target.value)}
+                            placeholder="Ex: Residencial Jardim"
+                            required
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-2">
+                            <Label htmlFor="sol-cidade">Cidade</Label>
+                            <Input
+                              id="sol-cidade"
+                              value={solCidade}
+                              onChange={(e) => setSolCidade(e.target.value)}
+                              placeholder="Cidade"
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="sol-estado">Estado</Label>
+                            <Input
+                              id="sol-estado"
+                              value={solEstado}
+                              onChange={(e) => setSolEstado(e.target.value)}
+                              placeholder="UF"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="sol-vagas">Quantidade aproximada de vagas</Label>
+                          <Input
+                            id="sol-vagas"
+                            type="number"
+                            value={solTotalVagas}
+                            onChange={(e) => setSolTotalVagas(e.target.value)}
+                            placeholder="Ex: 120"
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="sol-perfil">Qual sua função no condomínio? *</Label>
+                          <select
+                            id="sol-perfil"
+                            value={solPerfil}
+                            onChange={(e) => setSolPerfil(e.target.value)}
+                            required
+                            className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
+                          >
+                            <option value="">Selecione</option>
+                            <option value="sindico">Síndico</option>
+                            <option value="subsindico">Subsíndico</option>
+                            <option value="administradora">Administradora</option>
+                            <option value="morador">Morador responsável</option>
+                          </select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="sol-mensagem">Mensagem</Label>
+                          <textarea
+                            id="sol-mensagem"
+                            value={solMensagem}
+                            onChange={(e) => setSolMensagem(e.target.value)}
+                            placeholder="Conte um pouco sobre o condomínio ou sobre o interesse no Vaga Livre"
+                            className="w-full min-h-[96px] rounded-md border border-input bg-background px-3 py-2 text-sm"
+                          />
+                        </div>
+
+                        <Button
+                          type="submit"
+                          variant="hero"
+                          className="w-full"
+                          disabled={solicitando}
+                        >
+                          {solicitando ? 'Enviando...' : 'Enviar solicitação'}
+                        </Button>
+                      </form>
+                    </DialogContent>
+                  </Dialog>
+                </div>
               </CardContent>
             </TabsContent>
           </Tabs>
