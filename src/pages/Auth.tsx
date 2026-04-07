@@ -1,6 +1,4 @@
-//import React, { useState } from 'react';
 import React, { useEffect, useState } from 'react';
-//import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -25,20 +23,21 @@ import {
 import { toast } from 'sonner';
 import logo from '@/assets/logo.png';
 
-
 const Auth = () => {
-  
   const navigate = useNavigate();
   const { signIn, signUp } = useAuth();
 
   const [loading, setLoading] = useState(false);
   const [solicitarOpen, setSolicitarOpen] = useState(false);
   const [solicitando, setSolicitando] = useState(false);
+
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+
   const [regNome, setRegNome] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
+
   const [solNome, setSolNome] = useState('');
   const [solEmail, setSolEmail] = useState('');
   const [solCelular, setSolCelular] = useState('');
@@ -49,9 +48,11 @@ const Auth = () => {
   const [solPerfil, setSolPerfil] = useState('');
   const [solMensagem, setSolMensagem] = useState('');
 
+  const normalizarEmail = (email: string) => email.trim().toLowerCase();
+  const emailValido = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
   useEffect(() => {
-const processarConvite = async () => {
+  const processarConvite = async () => {
     const url = new URL(window.location.href);
     const code = url.searchParams.get('code');
 
@@ -68,9 +69,6 @@ const processarConvite = async () => {
       return;
     }
 
-
-
-  const verificarSessao = async () => {
     const {
       data: { session },
     } = await supabase.auth.getSession();
@@ -80,7 +78,7 @@ const processarConvite = async () => {
     }
   };
 
-  verificarSessao();
+  processarConvite();
 
   const {
     data: { subscription },
@@ -94,10 +92,6 @@ const processarConvite = async () => {
     subscription.unsubscribe();
   };
 }, [navigate]);
-
-  const normalizarEmail = (email: string) => email.trim().toLowerCase();
-
-  const emailValido = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
   const resetSolicitacaoForm = () => {
     setSolNome('');
@@ -115,17 +109,19 @@ const processarConvite = async () => {
     e.preventDefault();
     setLoading(true);
 
-    const emailNormalizado = normalizarEmail(loginEmail);
-    const { error } = await signIn(emailNormalizado, loginPassword);
+    try {
+      const emailNormalizado = normalizarEmail(loginEmail);
+      const { error } = await signIn(emailNormalizado, loginPassword);
 
-    if (error) {
-      toast.error('Erro ao entrar: ' + error.message);
-    } else {
-      toast.success('Login realizado com sucesso!');
-      navigate('/');
+      if (error) {
+        toast.error('Erro ao entrar: ' + error.message);
+      } else {
+        toast.success('Login realizado com sucesso!');
+        navigate('/');
+      }
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -230,46 +226,12 @@ const processarConvite = async () => {
         { body: payload }
       );
 
-  if (notifyError) {
-  console.error('Erro ao enviar notificação por email:', notifyError);
-
- const { error: notifyError } = await supabase.functions.invoke(
-  'notify-admin-request',
-  { body: payload }
-);
-
-/* Colei aqui */
-useEffect(() => {
-  const { data: listener } = supabase.auth.onAuthStateChange(
-    (event, session) => {
-      if (event === 'SIGNED_IN') {
-        console.log('Login via convite concluído', session)
-
-        window.location.href = '/'
-      }
-    }
-  )
-
-  return () => {
-    listener.subscription.unsubscribe()
-  }
-}, [])
-
-if (notifyError) {
-  console.error('Erro ao enviar notificação por email:', notifyError);
-
-  toast.error(
-    'Solicitação salva, mas a notificação por email não pôde ser enviada agora.'
-  );
-} else {
-  toast.success(
-    'Solicitação enviada com sucesso. Em breve entraremos em contato.'
-  );
-}
-
-
-  toast.error(mensagemErro);
-} else {
+      if (notifyError) {
+        console.error('Erro ao enviar notificação por email:', notifyError);
+        toast.error(
+          'Solicitação salva, mas a notificação por email não pôde ser enviada agora.'
+        );
+      } else {
         toast.success(
           'Solicitação enviada com sucesso. Em breve entraremos em contato.'
         );
