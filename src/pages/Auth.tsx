@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+//import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -23,21 +25,20 @@ import {
 import { toast } from 'sonner';
 import logo from '@/assets/logo.png';
 
+
 const Auth = () => {
+  
   const navigate = useNavigate();
   const { signIn, signUp } = useAuth();
 
   const [loading, setLoading] = useState(false);
   const [solicitarOpen, setSolicitarOpen] = useState(false);
   const [solicitando, setSolicitando] = useState(false);
-
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
-
   const [regNome, setRegNome] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
-
   const [solNome, setSolNome] = useState('');
   const [solEmail, setSolEmail] = useState('');
   const [solCelular, setSolCelular] = useState('');
@@ -47,6 +48,33 @@ const Auth = () => {
   const [solTotalVagas, setSolTotalVagas] = useState('');
   const [solPerfil, setSolPerfil] = useState('');
   const [solMensagem, setSolMensagem] = useState('');
+
+
+  useEffect(() => {
+  const verificarSessao = async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (session) {
+      navigate('/');
+    }
+  };
+
+  verificarSessao();
+
+  const {
+    data: { subscription },
+  } = supabase.auth.onAuthStateChange((event, session) => {
+    if (event === 'SIGNED_IN' && session) {
+      navigate('/');
+    }
+  });
+
+  return () => {
+    subscription.unsubscribe();
+  };
+}, [navigate]);
 
   const normalizarEmail = (email: string) => email.trim().toLowerCase();
 
@@ -190,6 +218,23 @@ const Auth = () => {
   'notify-admin-request',
   { body: payload }
 );
+
+/* Colei aqui */
+useEffect(() => {
+  const { data: listener } = supabase.auth.onAuthStateChange(
+    (event, session) => {
+      if (event === 'SIGNED_IN') {
+        console.log('Login via convite concluído', session)
+
+        window.location.href = '/'
+      }
+    }
+  )
+
+  return () => {
+    listener.subscription.unsubscribe()
+  }
+}, [])
 
 if (notifyError) {
   console.error('Erro ao enviar notificação por email:', notifyError);
