@@ -53,6 +53,7 @@ const MinhasVagas = () => {
   const [inicio, setInicio] = useState('');
   const [fim, setFim] = useState('');
   const [recorrente, setRecorrente] = useState(false);
+  const [valorCobrado, setValorCobrado] = useState('');
 
   const resetDialogState = () => {
     setDialogOpen(false);
@@ -84,34 +85,35 @@ const MinhasVagas = () => {
   };
 
     const fetchDisponibilidades = async () => {
-  if (!profile) return;
+      if (!profile) return;
 
-  const result = await (supabase
-    .from('disponibilidades_vaga' as any)
-    .select(`
-      id,
-      vaga_id,
-      data_inicio,
-      data_fim,
-      recorrente,
-      status,
-      criada_por_usuario_id,
-      vagas(identificacao),
-      reservas(id, status, disponibilidade_id)
-    `)
-    .eq('criada_por_usuario_id', profile.id)
-    .order('data_inicio', { ascending: true }));
+    const result = await (supabase
+          .from('disponibilidades_vaga' as any)
+          .select(`
+            id,
+            vaga_id,
+            data_inicio,
+            data_fim,
+            recorrente,
+            status,
+            criada_por_usuario_id,
+            vagas(identificacao),
+            valor_cobrado,
+            reservas(id, status, disponibilidade_id)
+          `)
+          .eq('criada_por_usuario_id', profile.id)
+          .order('data_inicio', { ascending: true }));
 
-  console.log('DISPONIBILIDADES COM RESERVAS:', result.data);
-  console.log('ERRO FETCH DISPONIBILIDADES:', result.error);
+        console.log('DISPONIBILIDADES COM RESERVAS:', result.data);
+        console.log('ERRO FETCH DISPONIBILIDADES:', result.error);
 
-  if (result.error) {
-    toast.error('Erro ao buscar disponibilidades: ' + result.error.message);
-    return;
-  }
+        if (result.error) {
+          toast.error('Erro ao buscar disponibilidades: ' + result.error.message);
+          return;
+        }
 
-  setDisponibilidades((result.data as any[]) ?? []);
-};
+        setDisponibilidades((result.data as any[]) ?? []);
+    };
 
   useEffect(() => {
     fetchVagas();
@@ -119,57 +121,87 @@ const MinhasVagas = () => {
   }, [profile, user]);
 
   const handleDisponibilizar = async () => {
-    if (!selectedVaga) {
-      toast.error('Nenhuma vaga foi selecionada');
-      return;
-    }
+  if (!selectedVaga) {
+    toast.error('Nenhuma vaga foi selecionada');
+    return;
+  }
 
-    if (!inicio || !fim) {
-      toast.error('Preencha início e fim');
-      return;
-    }
+  if (!inicio || !fim) {
+    toast.error('Preencha início e fim');
+    return;
+  }
 
-    if (!profile) {
-      toast.error('Perfil do usuário não carregado');
-      return;
-    }
+  if (!valorCobrado || Number(valorCobrado) <= 0) {
+    toast.error('Informe o valor por hora da vaga.');
+    return;
+  }
 
-    const inicioDate = new Date(inicio);
-    const fimDate = new Date(fim);
-    const diffMs = fimDate.getTime() - inicioDate.getTime();
+  if (!profile) {
+    toast.error('Perfil do usuário não carregado');
+    return;
+  }
 
-    if (Number.isNaN(inicioDate.getTime()) || Number.isNaN(fimDate.getTime())) {
-      toast.error('Preencha datas válidas');
-      return;
-    }
+  const inicioDate = new Date(inicio);
+  const fimDate = new Date(fim);
+  const diffMs = fimDate.getTime() - inicioDate.getTime();
 
-    if (diffMs < 3600000) {
-      toast.error('A duração mínima é de 1 hora');
-      return;
-    }
+  if (Number.isNaN(inicioDate.getTime()) || Number.isNaN(fimDate.getTime())) {
+    toast.error('Preencha datas válidas');
+    return;
+  }
 
-    const { error } = await supabase.from('disponibilidades_vaga').insert({
-      vaga_id: selectedVaga,
-      data_inicio: inicioDate.toISOString(),
-      data_fim: fimDate.toISOString(),
-      recorrente,
-      criada_por_usuario_id: profile.id,
-      status: 'ativa',
-    });
+  if (diffMs < 3600000) {
+    toast.error('A duração mínima é de 1 hora');
+    return;
+  }
 
-    
-    console.log('ERRO INSERT DISPONIBILIDADE:', error);
-    console.log('PROFILE.ID:', profile?.id);
-    console.log('SELECTED VAGA:', selectedVaga);
+  // 🔎 verifica se já existe disponibilidade conflitante para a mesma vaga
+ const { data: conflitos, error: conflitoError } = await (supabase
+  .from('disponibilidades_vaga' as any)
+  .select('id, data_inicio, data_fim, status')
+  .eq('vaga_id', selectedVaga)
+  .in('status', ['ativa'])
+  .lt('data_inicio', fimDate.toISOString())
+  .gt('data_fim', inicioDate.toISOString()));
 
-    if (error) {
-      toast.error('Erro: ' + error.message);
-    } else {
-      toast.success('Vaga disponibilizada com sucesso!');
-      resetDialogState();
-      fetchDisponibilidades();
-    }
-  };
+console.log('CONFLITOS ENCONTRADOS:', conflitos);
+console.log('ERRO AO BUSCAR CONFLITOS:', conflitoError);
+
+  if (conflitoError) {
+    toast.error('Erro ao validar conflito de horário.');
+    return;
+  }
+
+  if (conflitos && conflitos.length > 0) {
+    toast.error('Já existe uma disponibilidade cadastrada para essa vaga nesse período.');
+    return;
+  }
+
+  const { error } = await supabase.from('disponibilidades_vaga').insert({
+    vaga_id: selectedVaga,
+    data_inicio: inicioDate.toISOString(),
+    data_fim: fimDate.toISOString(),
+    recorrente,
+    criada_por_usuario_id: profile.id,
+    valor_cobrado: Number(valorCobrado),
+    status: 'ativa',
+  });
+
+  console.log('ERRO INSERT DISPONIBILIDADE:', error);
+  console.log('PROFILE.ID:', profile?.id);
+  console.log('SELECTED VAGA:', selectedVaga);
+
+  if (error) {
+    toast.error('Erro: ' + error.message);
+  } else {
+    toast.success('Vaga disponibilizada com sucesso!');
+    resetDialogState();
+    fetchDisponibilidades();
+  }
+};
+
+
+
 const handleCancelarDisponibilidade = async (id: string) => {
   console.log('ID DA DISPONIBILIDADE A CANCELAR:', id);
 
@@ -349,14 +381,31 @@ const getReservaAtiva = (d: Disponibilidade) => {
               />
             </div>
 
-            <div className="flex items-center gap-2">
-              <Switch
-                checked={recorrente}
-                onCheckedChange={setRecorrente}
+            <div className="space-y-2">
+              <Label htmlFor="valorCobrado">Valor por hora *</Label>
+              <Input
+                id="valorCobrado"
+                type="number"
+                min="0.01"
+                step="0.01"
+                placeholder="Ex: 3.00"
+                value={valorCobrado}
+                onChange={(e) => setValorCobrado(e.target.value)}
+                required
               />
-              <Label>Recorrente (semanal)</Label>
             </div>
 
+                {/* RECORRENTE NAO ESTA HABILITADO NA TELA 
+                            <div className="flex items-center gap-2">
+                              <Switch
+                                checked={recorrente}
+                                onCheckedChange={setRecorrente}
+                              />
+                              <Label>Recorrente (semanal)</Label>
+                            </div>
+                */}
+
+                
             <Button
               variant="hero"
               className="w-full"
@@ -386,55 +435,73 @@ const getReservaAtiva = (d: Disponibilidade) => {
 
         return (
           <Card key={d.id} className="border border-border shadow-none">
-                    <CardContent className="p-3 flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-foreground">
-                          {new Date(d.data_inicio).toLocaleString('pt-BR', {
-                            dateStyle: 'short',
-                            timeStyle: 'short',
-                          })}
-                          {' → '}
-                          {new Date(d.data_fim).toLocaleString('pt-BR', {
-                            timeStyle: 'short',
-                          })}
-                        </p>
+                    
+                    
+                   <CardContent className="p-3 flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">
+                        {new Date(d.data_inicio).toLocaleString('pt-BR', {
+                          dateStyle: 'short',
+                          timeStyle: 'short',
+                        })}
+                        {' → '}
+                        {new Date(d.data_fim).toLocaleString('pt-BR', {
+                          timeStyle: 'short',
+                        })}
+                      </p>
 
-                        {d.recorrente && (
-                          <Badge variant="outline" className="text-[10px] mt-1">
-                            Recorrente
-                          </Badge>
-                        )}
-                      </div>
+                      {/* 💰 Valor por hora */}
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Valor por hora:{' '}
+                        <span className="font-medium text-foreground">
+                          {d.valor_cobrado !== null && d.valor_cobrado !== undefined
+                            ? Number(d.valor_cobrado).toLocaleString('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL',
+                              })
+                            : 'Não informado'}
+                        </span>
+                      </p>
 
-                      <div className="flex items-center gap-2">
-                        <Badge variant={status.variant}>{status.label}</Badge>
-                          {podeCancelarDisponibilidade && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                             onClick={() => {
-                                    console.log('DISPONIBILIDADE CLICADA:', d);
-                                    handleCancelarDisponibilidade(d.id);
-                                  }}
-                            >
-                              Cancelar disponibilidade
-                            </Button>
-                          )}
+                      {d.recorrente && (
+                        <Badge variant="outline" className="text-[10px] mt-1">
+                          Recorrente
+                        </Badge>
+                      )}
+                    </div>
 
-                            {podeCancelarReserva && reservaAtiva && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleCancelarReserva(reservaAtiva.id, d.data_inicio)}
-                              >
-                                Cancelar reserva
-                              </Button>
-                            )}
-                        
+                    <div className="flex items-center gap-2">
+                      <Badge variant={status.variant}>{status.label}</Badge>
+
+                      {podeCancelarDisponibilidade && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            console.log('DISPONIBILIDADE CLICADA:', d);
+                            handleCancelarDisponibilidade(d.id);
+                          }}
+                        >
+                          Cancelar disponibilidade
+                        </Button>
+                      )}
+
+                      {podeCancelarReserva && reservaAtiva && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            handleCancelarReserva(reservaAtiva.id, d.data_inicio)
+                          }
+                        >
+                          Cancelar reserva
+                        </Button>
+                      )}
+                    </div>
+                  </CardContent>
 
 
-                      </div>
-                    </CardContent>
+
                   </Card>
                 );
               })}

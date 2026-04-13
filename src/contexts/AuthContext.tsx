@@ -106,31 +106,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signUp = async (email: string, password: string, metadata?: any) => {
-    try {
-      const response = await fetch(
-        'https://lzateceolesemthpqepl.supabase.co/functions/v1/create-resident',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            nome: metadata?.nome || '',
-            email,
-            password,
-          }),
-        }
-      );
+  try {
+    console.log('SUPABASE URL:', import.meta.env.VITE_SUPABASE_URL)/* Log adicionado*/
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-resident`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          nome: metadata?.nome || '',
+          email,
+          password,
+        }),
+      }
+    );
 
       const data = await response.json();
 
-      if (!response.ok) {
+      /*if (!response.ok) {
         return {
           error: {
             message: data?.error || 'Erro ao cadastrar usuário.',
           },
         };
+      }*/
+      if (!response.ok) {
+         console.error('Erro completo na resposta:', data)
+
+        return {
+          error: {
+            message:
+              data?.error ||
+              data?.message ||
+              JSON.stringify(data) ||
+              'Erro ao cadastrar usuário.',
+          },
+        };
       }
+
 
       return { error: null };
     } catch (err) {

@@ -116,7 +116,7 @@ Deno.serve(async (req) => {
           data: {
             nome: solicitacao.nome,
           },
-          redirectTo: 'https://vagalivre-mvp-v1.vercel.app/auth',
+            redirectTo: 'http://localhost:5173/auth',
         }
       )
 

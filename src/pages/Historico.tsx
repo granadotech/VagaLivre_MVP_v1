@@ -20,6 +20,7 @@ const statusMap: Record<
   string,
   { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }
 > = {
+  aguardando_pagamento: { label: 'Aguardando pagamento', variant: 'secondary' },
   confirmada: { label: 'Confirmada', variant: 'default' },
   em_uso: { label: 'Em uso', variant: 'secondary' },
   finalizada: { label: 'Finalizada', variant: 'outline' },
@@ -27,25 +28,41 @@ const statusMap: Record<
   expirada: { label: 'Expirada', variant: 'outline' },
 };
 
+const calcularTempoRestante = (expiraEm?: string | null, agoraMs?: number) => {
+  if (!expiraEm) return '';
+
+  const diff = new Date(expiraEm).getTime() - (agoraMs ?? Date.now());
+  if (diff <= 0) return '00:00';
+
+  const m = Math.floor(diff / 60000);
+  const s = Math.floor((diff % 60000) / 1000);
+
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+};
+
 const Historico = () => {
   const { profile } = useAuth();
   const [reservas, setReservas] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [agoraTick, setAgoraTick] = useState<number>(Date.now());
 
   const carregarReservas = async () => {
-    if (!profile) return;
+    const profileId = profile?.id;
+    if (!profileId) {
+      setReservas([]);
+      setLoading(false);
+      return;
+    }
 
     setLoading(true);
 
     const { data, error } = await supabase
       .from('reservas')
-      .select(
-        `
+      .select(`
         *,
         vagas(identificacao, bloco, unidade)
-      `
-      )
-      .eq('usuario_reservante_id', profile.id)
+      `)
+      .eq('usuario_reservante_id', profileId)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -62,12 +79,53 @@ const Historico = () => {
     carregarReservas();
   }, [profile]);
 
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setAgoraTick(Date.now());
+    }, 1000);
+ return () => clearInterval(interval);
+  }, []);
+
+/* Aqui*/
+  useEffect(() => {
+    const reservaExpirada = reservas.find(
+      (r) =>
+        r.status === 'aguardando_pagamento' &&
+        r.pagamento_expira_em &&
+        new Date(r.pagamento_expira_em).getTime() <= agoraTick
+    );
+
+    if (!reservaExpirada) return;
+
+    const expirarReserva = async () => {
+      const { error } = await supabase
+        .from('reservas')
+        .update({ status: 'expirada' })
+        .eq('id', reservaExpirada.id)
+        .eq('status', 'aguardando_pagamento');
+
+      if (!error) {
+        carregarReservas();
+      }
+    };
+
+    expirarReserva();
+  }, [agoraTick, reservas]);
+
+
+
+
+
+
+
+
+/* ate Aqui*/
   const agora = new Date();
 
   const ativas = reservas.filter((r) => {
     const fim = new Date(r.fim_reserva);
 
-    if (['confirmada', 'em_uso'].includes(r.status)) return true;
+    if (['aguardando_pagamento', 'confirmada', 'em_uso'].includes(r.status)) return true;
     if (r.status === 'cancelada' && fim > agora) return true;
 
     return false;
@@ -94,9 +152,9 @@ const Historico = () => {
 
     const { error } = await supabase
       .from('reservas')
-      .update({ 
+      .update({
         status: 'cancelada',
-        cancelada_por: 'usuario'
+        cancelada_por: 'usuario',
       })
       .eq('id', reservaId);
 
@@ -125,6 +183,7 @@ const Historico = () => {
             reservas={ativas}
             loading={loading}
             onCancelarReserva={handleCancelarReserva}
+            agoraTick={agoraTick}
           />
         </TabsContent>
 
@@ -133,6 +192,7 @@ const Historico = () => {
             reservas={passadas}
             loading={loading}
             onCancelarReserva={handleCancelarReserva}
+            agoraTick={agoraTick}
           />
         </TabsContent>
       </Tabs>
@@ -143,8 +203,9 @@ const Historico = () => {
 const ReservaList: React.FC<{
   reservas: any[];
   loading: boolean;
+  agoraTick: number;
   onCancelarReserva: (reservaId: string, inicioReserva: string) => void;
-}> = ({ reservas, loading, onCancelarReserva }) => {
+}> = ({ reservas, loading, agoraTick, onCancelarReserva }) => {
   if (loading) {
     return <p className="text-center text-muted-foreground py-8">Carregando...</p>;
   }
@@ -174,12 +235,75 @@ const ReservaList: React.FC<{
                   <h3 className="font-heading font-semibold text-foreground text-sm">
                     Vaga {(r.vagas as any)?.identificacao}
                   </h3>
+
+                  {r.status === 'aguardando_pagamento' && (
+                    <div className="mt-2 space-y-2">
+                      <p className="text-sm">⏳ Reserva aguardando pagamento</p>
+                      <p className="text-sm">
+                        Tempo restante: {calcularTempoRestante(r.pagamento_expira_em, agoraTick)}
+                      </p>
+
+                      <p className="text-sm text-muted-foreground">
+                        Valor total
+                      </p>
+                      <p className="text-base font-semibold">
+                        {Number(r.valor_total ?? 0).toLocaleString('pt-BR', {
+                          style: 'currency',
+                          currency: 'BRL',
+                        })}
+                      </p>
+                        <p className="text-sm text-muted-foreground">
+                          Valor por hora: {Number(r.valor_hora_aplicado ?? 0).toLocaleString('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL',
+                          })}
+                        </p>
+
+
+                      {r.pix_qr_code && (
+                        <div className="flex justify-center">
+                          <img
+                            src={`data:image/png;base64,${r.pix_qr_code}`}
+                            alt="QR Code Pix"
+                            className="w-40 h-40"
+                          />
+                        </div>
+                      )}
+
+                      {r.pix_copia_cola && (
+                        <div className="space-y-2">
+                          <p className="text-xs break-all">{r.pix_copia_cola}</p>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full"
+                            onClick={() => {
+                              navigator.clipboard.writeText(r.pix_copia_cola || '');
+                              toast.success('Código PIX copiado!');
+                            }}
+                          >
+                            Copiar código Pix
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {r.status === 'confirmada' && (
+                    <p className="text-sm">✅ Reserva confirmada</p>
+                  )}
+
+                  {r.status === 'expirada' && (
+                    <p className="text-sm">❌ Tempo expirado</p>
+                  )}
+
                   {(r.vagas as any)?.bloco && (
                     <p className="text-xs text-muted-foreground">
                       Bloco {(r.vagas as any).bloco} • Unid. {(r.vagas as any).unidade}
                     </p>
                   )}
                 </div>
+
                 <Badge variant={status.variant}>{status.label}</Badge>
               </div>
 
@@ -200,8 +324,8 @@ const ReservaList: React.FC<{
                   {r.cancelada_por === 'usuario'
                     ? 'Você cancelou essa reserva'
                     : r.cancelada_por === 'proprietario'
-                    ? 'Reserva cancelada pelo proprietário'
-                    : 'Reserva cancelada'}
+                      ? 'Reserva cancelada pelo proprietário'
+                      : 'Reserva cancelada'}
                 </p>
               )}
 
@@ -214,6 +338,7 @@ const ReservaList: React.FC<{
                         Ver código de acesso
                       </Button>
                     </DialogTrigger>
+
                     <DialogContent>
                       <DialogHeader>
                         <DialogTitle>Código de Acesso</DialogTitle>
